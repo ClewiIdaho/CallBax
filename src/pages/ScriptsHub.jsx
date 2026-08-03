@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { useStore } from '../data/store'
+import { useStore, todayStr } from '../data/store'
 import { SCRIPTS } from '../data/scripts'
 import { CHECKLIST_ITEMS } from '../data/constants'
+import { proposalMailtoHref } from '../data/proposal'
 import CallMode from './CallMode'
 
 const QUICK_OUTCOMES = ['No Answer', 'Not Interested', 'Interested', 'Discovery Scheduled']
@@ -93,14 +94,42 @@ export default function ScriptsHub({ initialBusiness = '', onConsumedInitial }) 
     setPickerOpen(false)
   }
 
+  // Save the email they give at the close — creates the lead if needed.
+  async function saveEmail(email) {
+    const name = businessInput.trim()
+    if (!name) return false
+    let lead = matchedLead
+    if (!lead) {
+      lead = await addLead({ business_name: name })
+      if (!lead) return false
+    }
+    await updateLead(lead.id, { email })
+    return true
+  }
+
+  // Open the mail app with the proposal pre-written, mark it sent.
+  function sendProposal() {
+    const lead = matchedLead
+    if (!lead || !lead.email) return
+    window.location.href = proposalMailtoHref(lead, currentUser)
+    updateLead(lead.id, {
+      pipeline_status: 'Proposal Sent',
+      proposal_sent_date: todayStr(),
+    })
+    postActivity(`📨 Proposal sent to ${lead.business_name}`, lead.id)
+  }
+
   if (callModeOpen) {
     return (
       <CallMode
         script={script}
         businessName={businessInput.trim()}
         phone={phone}
+        email={matchedLead?.email || ''}
         setChecked={setChecked}
         onLogOutcome={logOutcome}
+        onSaveEmail={saveEmail}
+        onSendProposal={sendProposal}
         onClose={() => setCallModeOpen(false)}
         onNextCall={() => {
           resetCall()
