@@ -38,6 +38,7 @@ export default function ScriptsHub({ initialBusiness = '', onConsumedInitial }) 
   const [pickerOpen, setPickerOpen] = useState(false)
   // Arriving via Discover's "Call now" drops straight into guided call mode.
   const [callModeOpen, setCallModeOpen] = useState(!!initialBusiness)
+  const [emailDraft, setEmailDraft] = useState('')
 
   useEffect(() => {
     if (initialBusiness) onConsumedInitial?.()
@@ -47,6 +48,12 @@ export default function ScriptsHub({ initialBusiness = '', onConsumedInitial }) 
   const matchedLead = leads.find(
     (l) => l.business_name.toLowerCase() === businessInput.trim().toLowerCase()
   )
+
+  // Prefill the email box whenever a different lead is loaded.
+  useEffect(() => {
+    setEmailDraft(matchedLead?.email || '')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matchedLead?.id])
 
   const script = SCRIPTS[scriptUser]
   const phone = matchedLead?.phone || ''
@@ -177,6 +184,26 @@ export default function ScriptsHub({ initialBusiness = '', onConsumedInitial }) 
         >
           ▶ Start call mode
         </button>
+        <div className="email-capture">
+          <input
+            type="email"
+            value={emailDraft}
+            onChange={(e) => setEmailDraft(e.target.value)}
+            placeholder="Their email for the proposal…"
+          />
+          <button
+            className="btn"
+            disabled={!emailDraft.trim() || emailDraft === (matchedLead?.email || '')}
+            onClick={() => saveEmail(emailDraft.trim())}
+          >
+            {matchedLead?.email && emailDraft === matchedLead.email ? '✓' : 'Save'}
+          </button>
+        </div>
+        {matchedLead?.email && (
+          <button className="btn btn-big send-proposal-btn" onClick={sendProposal}>
+            📨 Send proposal to {matchedLead.email}
+          </button>
+        )}
       </div>
 
       <div className="script-switch">
