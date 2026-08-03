@@ -1,128 +1,175 @@
-// Local data store. Everything is held in React state and mirrored to
-// localStorage so the app works fully offline for now. When Supabase gets
-// wired in, the action functions below keep the same names/shapes and the
-// components don't change.
+// Supabase-backed data store. All three tables load on sign-in, and realtime
+// subscriptions keep both phones in sync without manual refresh. Writes are
+// applied to local state immediately so the UI feels instant; the realtime
+// echo reconciles anything that raced.
 
 import { createContext, useContext, useEffect, useState } from 'react'
-import { SEED_LEADS, SEED_CALL_LOG, SEED_ACTIVITY } from './seed'
+import { supabase, TEAM_EMAIL } from './supabase'
 
-const STORAGE_KEY = 'callbax-local-v1'
 const USER_KEY = 'callbax-user'
 
 const StoreContext = createContext(null)
 
-function newId() {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-}
-
-function loadInitial() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) return JSON.parse(raw)
-  } catch {
-    // corrupted storage — fall back to seed data
+function applyChange(setter, payload) {
+  if (payload.eventType === 'INSERT') {
+    setter((rows) =>
+      rows.some((r) => r.id === payload.new.id) ? rows : [payload.new, ...rows]
+    )
+  } else if (payload.eventType === 'UPDATE') {
+    setter((rows) => rows.map((r) => (r.id === payload.new.id ? payload.new : r)))
+  } else if (payload.eventType === 'DELETE') {
+    setter((rows) => rows.filter((r) => r.id !== payload.old.id))
   }
-  return { leads: SEED_LEADS, callLog: SEED_CALL_LOG, activity: SEED_ACTIVITY }
 }
 
 export function StoreProvider({ children }) {
-  const [data, setData] = useState(loadInitial)
+  const [session, setSession] = useState(undefined) // undefined = still checking
+  const [leads, setLeads] = useState([])
+  const [callLog, setCallLog] = useState([])
+  const [activity, setActivity] = useState([])
   const [currentUser, setCurrentUserState] = useState(
     () => localStorage.getItem(USER_KEY) || null
   )
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
-  }, [data])
+    supabase.auth.getSession().then(({ data }) => setSession(data.session))
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => setSession(s))
+    return () => sub.subscription.unsubscribe()
+  }, [])
+
+  useEffect(() => {
+    if (!session) return
+    let cancelled = false
+
+    async function fetchAll() {
+      const [l, c, a] = await Promise.all([
+        supabase.from('leads').select('*').order('created_at', { ascending: false }),
+        supabase.from('call_log').select('*').order('at', { ascending: false }),
+        supabase.from('activity_feed').select('*').order('at', { ascending: false }),
+      ])
+      if (cancelled) return
+      if (l.data) setLeads(l.data)
+      if (c.data) setCallLog(c.data)
+      if (a.data) setActivity(a.data)
+    }
+    fetchAll()
+
+    const channel = supabase
+      .channel('callbax-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, (p) =>
+        applyChange(setLeads, p)
+      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'call_log' }, (p) =>
+        applyChange(setCallLog, p)
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'activity_feed' },
+        (p) => applyChange(setActivity, p)
+      )
+      .subscribe()
+
+    return () => {
+      cancelled = true
+      supabase.removeChannel(channel)
+    }
+  }, [session])
 
   function setCurrentUser(name) {
     setCurrentUserState(name)
     localStorage.setItem(USER_KEY, name)
   }
 
+  async function login(password) {
+    const { error } = await supabase.auth.signInWithPassword({
+      email: TEAM_EMAIL,
+      password,
+    })
+    return error ? error.message : null
+  }
+
+  function logout() {
+    supabase.auth.signOut()
+  }
+
   // ---- leads ----
 
-  function addLead(fields) {
-    const now = new Date().toISOString()
-    const lead = {
-      id: newId(),
-      business_name: '',
-      category: '',
-      phone: '',
-      owner: currentUser || 'Ricky',
-      pipeline_status: 'To Call',
-      call_outcome: null,
-      modules_selected: [],
-      notes: [],
-      proposal_sent_date: null,
-      follow_up_date: null,
-      contract_signed_date: null,
-      deposit_collected: false,
-      delivery_target_date: null,
-      launch_date: null,
-      created_at: now,
-      updated_at: now,
-      ...fields,
+  async function addLead(fields) {
+    const { data, error } = await supabase
+      .from('leads')
+      .insert({ owner: currentUser || 'Ricky', ...fields })
+      .select()
+      .single()
+    if (error) {
+      alert(`Couldn't save: ${error.message}`)
+      return null
     }
-    setData((d) => ({ ...d, leads: [lead, ...d.leads] }))
-    return lead
+    applyChange(setLeads, { eventType: 'INSERT', new: data })
+    return data
   }
 
-  function updateLead(id, fields) {
-    setData((d) => ({
-      ...d,
-      leads: d.leads.map((l) =>
-        l.id === id ? { ...l, ...fields, updated_at: new Date().toISOString() } : l
-      ),
-    }))
+  async function updateLead(id, fields) {
+    setLeads((rows) => rows.map((r) => (r.id === id ? { ...r, ...fields } : r)))
+    const { error } = await supabase.from('leads').update(fields).eq('id', id)
+    if (error) alert(`Save failed: ${error.message}`)
   }
 
-  function addNote(leadId, text) {
+  async function addNote(leadId, text) {
+    const lead = leads.find((l) => l.id === leadId)
+    if (!lead) return
     const note = { at: new Date().toISOString(), by: currentUser || 'Ricky', text }
-    setData((d) => ({
-      ...d,
-      leads: d.leads.map((l) =>
-        l.id === leadId
-          ? { ...l, notes: [note, ...l.notes], updated_at: note.at }
-          : l
-      ),
-    }))
+    await updateLead(leadId, { notes: [note, ...(lead.notes || [])] })
   }
 
   // ---- call log ----
 
-  function logCall({ leadId, outcome, note, checklistState }) {
-    const entry = {
-      id: newId(),
-      lead_id: leadId,
-      caller: currentUser || 'Ricky',
-      outcome,
-      note: note || '',
-      checklist_state: checklistState || {},
-      at: new Date().toISOString(),
+  async function logCall({ leadId, outcome, note, checklistState }) {
+    const { data, error } = await supabase
+      .from('call_log')
+      .insert({
+        lead_id: leadId,
+        caller: currentUser || 'Ricky',
+        outcome,
+        note: note || '',
+        checklist_state: checklistState || {},
+      })
+      .select()
+      .single()
+    if (error) {
+      alert(`Couldn't log call: ${error.message}`)
+      return null
     }
-    setData((d) => ({ ...d, callLog: [entry, ...d.callLog] }))
-    return entry
+    applyChange(setCallLog, { eventType: 'INSERT', new: data })
+    return data
   }
 
   // ---- activity feed ----
 
-  function postActivity(message, relatedLeadId = null) {
-    const entry = {
-      id: newId(),
-      author: currentUser || 'Ricky',
-      message,
-      related_lead_id: relatedLeadId,
-      at: new Date().toISOString(),
+  async function postActivity(message, relatedLeadId = null) {
+    const { data, error } = await supabase
+      .from('activity_feed')
+      .insert({
+        author: currentUser || 'Ricky',
+        message,
+        related_lead_id: relatedLeadId,
+      })
+      .select()
+      .single()
+    if (error) {
+      alert(`Couldn't post: ${error.message}`)
+      return null
     }
-    setData((d) => ({ ...d, activity: [entry, ...d.activity] }))
-    return entry
+    applyChange(setActivity, { eventType: 'INSERT', new: data })
+    return data
   }
 
   const value = {
-    leads: data.leads,
-    callLog: data.callLog,
-    activity: data.activity,
+    session,
+    login,
+    logout,
+    leads,
+    callLog,
+    activity,
     currentUser,
     setCurrentUser,
     addLead,

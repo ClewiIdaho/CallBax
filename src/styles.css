@@ -190,6 +190,12 @@ select {
   max-width: 280px;
 }
 
+.login-error {
+  color: var(--danger);
+  text-align: center;
+  font-size: 0.9rem;
+}
+
 /* ---- home hub ---- */
 
 .stats-row {

@@ -11,9 +11,59 @@ const TABS = [
   { key: 'scripts', label: 'Scripts', icon: '📞' },
 ]
 
+function LoginScreen() {
+  const { login } = useStore()
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState(null)
+  const [busy, setBusy] = useState(false)
+
+  async function submit(e) {
+    e.preventDefault()
+    setBusy(true)
+    setError(null)
+    const err = await login(password)
+    setBusy(false)
+    if (err) setError(err)
+  }
+
+  return (
+    <div className="user-picker">
+      <h1 className="brand">CallBax</h1>
+      <p>Enter the team password</p>
+      <form className="user-picker-buttons" onSubmit={submit}>
+        <input
+          className="business-input"
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="Password"
+          autoFocus
+        />
+        <button className="btn btn-big" type="submit" disabled={busy || !password}>
+          {busy ? 'Signing in…' : 'Sign in'}
+        </button>
+        {error && <p className="login-error">{error}</p>}
+      </form>
+    </div>
+  )
+}
+
 export default function App() {
-  const { currentUser, setCurrentUser } = useStore()
+  const { session, currentUser, setCurrentUser } = useStore()
   const [tab, setTab] = useState('home')
+
+  if (session === undefined) {
+    return (
+      <div className="user-picker">
+        <h1 className="brand">CallBax</h1>
+        <p>Loading…</p>
+      </div>
+    )
+  }
+
+  if (!session) {
+    return <LoginScreen />
+  }
 
   // First open: pick who you are. One tap, remembered forever.
   if (!currentUser) {
