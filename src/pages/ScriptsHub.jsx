@@ -50,7 +50,7 @@ export default function ScriptsHub() {
     setChecked((c) => ({ ...c, [item]: !c[item] }))
   }
 
-  function logOutcome(outcome) {
+  async function logOutcome(outcome) {
     const name = businessInput.trim()
     if (!name) {
       alert('Type the business name at the top first.')
@@ -61,7 +61,8 @@ export default function ScriptsHub() {
     // Write to the existing lead, or create one on the spot — no double entry.
     let lead = matchedLead
     if (!lead) {
-      lead = addLead({ business_name: name })
+      lead = await addLead({ business_name: name })
+      if (!lead) return
     }
     const newChecked = { ...checked, 'Outcome logged': true }
     updateLead(lead.id, {

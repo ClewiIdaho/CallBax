@@ -62,10 +62,11 @@ export default function WorkflowHub() {
     return <LeadDetail lead={selected} onBack={() => setSelectedId(null)} />
   }
 
-  function submitNewLead(e) {
+  async function submitNewLead(e) {
     e.preventDefault()
     if (!newName.trim()) return
-    const lead = addLead({ business_name: newName.trim(), phone: newPhone.trim() })
+    const lead = await addLead({ business_name: newName.trim(), phone: newPhone.trim() })
+    if (!lead) return
     setNewName('')
     setNewPhone('')
     setAdding(false)
