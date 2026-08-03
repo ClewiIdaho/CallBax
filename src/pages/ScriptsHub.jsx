@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useStore } from '../data/store'
 import { SCRIPTS } from '../data/scripts'
 import { CHECKLIST_ITEMS } from '../data/constants'
+import CallMode from './CallMode'
 
 const QUICK_OUTCOMES = ['No Answer', 'Not Interested', 'Interested', 'Discovery Scheduled']
 
@@ -28,18 +29,27 @@ function ScriptSection({ section, businessName }) {
   )
 }
 
-export default function ScriptsHub({ initialBusiness = '' }) {
+export default function ScriptsHub({ initialBusiness = '', onConsumedInitial }) {
   const { leads, currentUser, addLead, updateLead, logCall, postActivity } = useStore()
   const [businessInput, setBusinessInput] = useState(initialBusiness)
   const [scriptUser, setScriptUser] = useState(currentUser || 'Ricky')
   const [checked, setChecked] = useState({})
   const [pickerOpen, setPickerOpen] = useState(false)
+  // Arriving via Discover's "Call now" drops straight into guided call mode.
+  const [callModeOpen, setCallModeOpen] = useState(!!initialBusiness)
+
+  useEffect(() => {
+    if (initialBusiness) onConsumedInitial?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const matchedLead = leads.find(
     (l) => l.business_name.toLowerCase() === businessInput.trim().toLowerCase()
   )
 
   const script = SCRIPTS[scriptUser]
+  const phone = matchedLead?.phone || ''
+  const telHref = phone ? 'tel:' + phone.replace(/[^+\d]/g, '') : null
 
   function toggleItem(item) {
     // "Outcome logged" opens the outcome picker instead of just checking a box.
@@ -55,14 +65,14 @@ export default function ScriptsHub({ initialBusiness = '' }) {
     if (!name) {
       alert('Type the business name at the top first.')
       setPickerOpen(false)
-      return
+      return false
     }
 
     // Write to the existing lead, or create one on the spot — no double entry.
     let lead = matchedLead
     if (!lead) {
       lead = await addLead({ business_name: name })
-      if (!lead) return
+      if (!lead) return false
     }
     const newChecked = { ...checked, 'Outcome logged': true }
     updateLead(lead.id, {
@@ -74,12 +84,30 @@ export default function ScriptsHub({ initialBusiness = '' }) {
     postActivity(`Called ${name} — ${outcome}`, lead.id)
     setChecked(newChecked)
     setPickerOpen(false)
+    return true
   }
 
   function resetCall() {
     setChecked({})
     setBusinessInput('')
     setPickerOpen(false)
+  }
+
+  if (callModeOpen) {
+    return (
+      <CallMode
+        script={script}
+        businessName={businessInput.trim()}
+        phone={phone}
+        setChecked={setChecked}
+        onLogOutcome={logOutcome}
+        onClose={() => setCallModeOpen(false)}
+        onNextCall={() => {
+          resetCall()
+          setCallModeOpen(false)
+        }}
+      />
+    )
   }
 
   return (
@@ -107,6 +135,20 @@ export default function ScriptsHub({ initialBusiness = '' }) {
           )}
         </div>
       )}
+
+      <div className="call-row">
+        {telHref && (
+          <a className="call-banner" href={telHref}>
+            📞 Call {phone}
+          </a>
+        )}
+        <button
+          className="btn btn-big start-call-btn"
+          onClick={() => setCallModeOpen(true)}
+        >
+          ▶ Start call mode
+        </button>
+      </div>
 
       <div className="script-switch">
         {Object.entries(SCRIPTS).map(([key, s]) => (

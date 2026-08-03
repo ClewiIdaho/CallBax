@@ -105,7 +105,12 @@ export default function App() {
       <main className="content">
         {tab === 'home' && <HomeHub />}
         {tab === 'workflow' && <WorkflowHub />}
-        {tab === 'scripts' && <ScriptsHub initialBusiness={scriptBusiness} />}
+        {tab === 'scripts' && (
+          <ScriptsHub
+            initialBusiness={scriptBusiness}
+            onConsumedInitial={() => setScriptBusiness('')}
+          />
+        )}
         {tab === 'discover' && (
           <DiscoverHub
             onCallNow={(name) => {

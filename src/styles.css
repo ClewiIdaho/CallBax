@@ -881,6 +881,154 @@ select {
   padding: 10px 8px;
 }
 
+/* ---- call banner + call mode ---- */
+
+.call-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.call-banner {
+  display: block;
+  text-align: center;
+  background: #16a34a;
+  color: #fff;
+  border-radius: var(--radius);
+  padding: 14px;
+  font-weight: 800;
+  font-size: 1.05rem;
+  text-decoration: none;
+}
+
+.start-call-btn {
+  background: linear-gradient(90deg, #6366f1, #14b8a6);
+  color: #fff;
+}
+
+.callmode {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100dvh - 130px);
+  padding: 14px;
+  max-width: 640px;
+  margin: 0 auto;
+  width: 100%;
+  gap: 14px;
+}
+
+.callmode-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.callmode-close {
+  background: var(--card);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  border-radius: 999px;
+  width: 40px;
+  height: 40px;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.callmode-biz {
+  flex: 1;
+  font-weight: 800;
+  font-size: 1.15rem;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.callmode-dial {
+  background: #16a34a;
+  border-radius: 999px;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+
+.callmode-dial-placeholder {
+  width: 40px;
+  flex-shrink: 0;
+}
+
+.callmode-dots {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--line);
+  transition: background 0.2s ease;
+}
+
+.dot.on {
+  background: var(--accent);
+}
+
+.callmode-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 18px 16px;
+  box-shadow: var(--shadow);
+}
+
+.callmode-label {
+  font-size: 0.8rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+}
+
+.callmode-label.objection {
+  color: #d97706;
+  margin-top: 4px;
+}
+
+.callmode-text {
+  font-size: 1.15rem;
+  line-height: 1.65;
+}
+
+.callmode-actions {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 12px;
+}
+
+.branch-btn {
+  text-align: left;
+  font-size: 1rem;
+}
+
+.callmode-done {
+  font-size: 3rem;
+  text-align: center;
+  margin-top: 20px;
+}
+
 /* ---- outcome picker sheet ---- */
 
 .outcome-overlay {

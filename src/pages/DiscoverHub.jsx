@@ -4,10 +4,19 @@ import { supabase } from '../data/supabase'
 
 const RADII = [1, 3, 5]
 const CATEGORIES = [
-  { key: 'all', label: 'All' },
-  { key: 'food', label: 'Food & Drink' },
-  { key: 'retail', label: 'Retail' },
-  { key: 'services', label: 'Services' },
+  { key: 'all', label: '🌐 All types' },
+  { key: 'restaurants', label: '🍽️ Restaurants' },
+  { key: 'coffee', label: '☕ Coffee shops' },
+  { key: 'bars', label: '🍻 Bars & pubs' },
+  { key: 'barber', label: '💈 Barber & beauty' },
+  { key: 'vape', label: '💨 Vape & smoke' },
+  { key: 'tattoo', label: '🖋️ Tattoo & piercing' },
+  { key: 'auto', label: '🚗 Auto shops' },
+  { key: 'gym', label: '💪 Gyms & fitness' },
+  { key: 'pets', label: '🐾 Pets & vets' },
+  { key: 'food', label: '🥖 Food & drink (broad)' },
+  { key: 'retail', label: '🛍️ Retail (broad)' },
+  { key: 'services', label: '🧰 Services (broad)' },
 ]
 
 const normPhone = (p) => (p || '').replace(/\D/g, '').slice(-10)
@@ -22,6 +31,7 @@ export default function DiscoverHub({ onCallNow }) {
   const [results, setResults] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [fromCache, setFromCache] = useState(false)
   const [added, setAdded] = useState({}) // business name -> true once added
 
   // Hide anything already in the pipeline (match by name or phone).
@@ -51,6 +61,7 @@ export default function DiscoverHub({ onCallNow }) {
       setError(data.error)
       return
     }
+    setFromCache(!!data.cached)
     setResults(data.results.filter((b) => !isKnown(b)))
   }
 
@@ -68,7 +79,12 @@ export default function DiscoverHub({ onCallNow }) {
 
   async function callNow(b) {
     const lead = added[b.name] ? true : await addBiz(b)
-    if (lead) onCallNow(b.name)
+    if (!lead) return
+    onCallNow(b.name)
+    // Pop the phone's dialer with the number loaded (one tap to connect).
+    if (b.phone) {
+      window.location.href = 'tel:' + b.phone.replace(/[^+\d]/g, '')
+    }
   }
 
   return (
@@ -118,7 +134,7 @@ export default function DiscoverHub({ onCallNow }) {
         <div className="lead-list">
           <p className="discover-count">
             {results.length} {results.length === 1 ? 'business' : 'businesses'} with no
-            real website nearby
+            real website nearby{fromCache ? ' · from today’s earlier search' : ''}
           </p>
           {results.length === 0 && (
             <p className="empty">
