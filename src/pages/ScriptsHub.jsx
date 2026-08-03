@@ -28,9 +28,9 @@ function ScriptSection({ section, businessName }) {
   )
 }
 
-export default function ScriptsHub() {
+export default function ScriptsHub({ initialBusiness = '' }) {
   const { leads, currentUser, addLead, updateLead, logCall, postActivity } = useStore()
-  const [businessInput, setBusinessInput] = useState('')
+  const [businessInput, setBusinessInput] = useState(initialBusiness)
   const [scriptUser, setScriptUser] = useState(currentUser || 'Ricky')
   const [checked, setChecked] = useState({})
   const [pickerOpen, setPickerOpen] = useState(false)

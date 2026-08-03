@@ -803,6 +803,84 @@ select {
   color: #fff;
 }
 
+/* ---- discover hub ---- */
+
+.discover-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.discover-row {
+  display: flex;
+  gap: 8px;
+}
+
+.segmented {
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  flex: 1;
+}
+
+.seg-btn {
+  flex: 1;
+  background: var(--card);
+  color: var(--muted);
+  border: none;
+  padding: 10px 0;
+  font-weight: 600;
+  min-height: 44px;
+}
+
+.seg-btn.active {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.category-select {
+  flex: 1;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 10px;
+  background: var(--card);
+  color: var(--ink);
+  min-height: 44px;
+  font-weight: 500;
+}
+
+.discover-count {
+  font-size: 0.8rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+.presence-tag {
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  white-space: nowrap;
+  background: var(--danger);
+  color: #fff;
+}
+
+.presence-tag.social {
+  background: #2563eb;
+}
+
+.discover-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.discover-actions .btn {
+  flex: 1;
+  padding: 10px 8px;
+}
+
 /* ---- outcome picker sheet ---- */
 
 .outcome-overlay {
