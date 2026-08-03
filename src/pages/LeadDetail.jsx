@@ -1,10 +1,29 @@
 import { useState } from 'react'
 import { useStore, fmtDateTime } from '../data/store'
-import { PIPELINE_STATUSES, STATUS_COLORS, MODULES, CALL_OUTCOMES } from '../data/constants'
+import {
+  PIPELINE_STATUSES,
+  STATUS_COLORS,
+  STATUS_EMOJI,
+  MODULES,
+  MODULE_PRICES,
+  RECURRING_MODULES,
+  CALL_OUTCOMES,
+  leadValue,
+  leadMonthly,
+  fmtMoney,
+} from '../data/constants'
 
 export default function LeadDetail({ lead, onBack }) {
-  const { updateLead, addNote } = useStore()
+  const { updateLead, addNote, postActivity } = useStore()
   const [noteDraft, setNoteDraft] = useState('')
+
+  function changeStatus(status) {
+    updateLead(lead.id, { pipeline_status: status })
+    // Celebrate wins in the shared feed so the other person sees it instantly.
+    if (status === 'Closed Won' && lead.pipeline_status !== 'Closed Won') {
+      postActivity(`🎉 Closed Won: ${lead.business_name}!`, lead.id)
+    }
+  }
 
   function toggleModule(mod) {
     const has = lead.modules_selected.includes(mod)
@@ -39,10 +58,12 @@ export default function LeadDetail({ lead, onBack }) {
           <select
             value={lead.pipeline_status}
             style={{ borderLeft: `6px solid ${STATUS_COLORS[lead.pipeline_status]}` }}
-            onChange={(e) => updateLead(lead.id, { pipeline_status: e.target.value })}
+            onChange={(e) => changeStatus(e.target.value)}
           >
             {PIPELINE_STATUSES.map((s) => (
-              <option key={s}>{s}</option>
+              <option key={s} value={s}>
+                {STATUS_EMOJI[s]} {s}
+              </option>
             ))}
           </select>
         </label>
@@ -111,15 +132,58 @@ export default function LeadDetail({ lead, onBack }) {
       <div className="modules">
         <span className="section-label">Modules</span>
         <div className="module-chips">
-          {MODULES.map((m) => (
-            <button
-              key={m}
-              className={lead.modules_selected.includes(m) ? 'chip selected' : 'chip'}
-              onClick={() => toggleModule(m)}
-            >
-              {m}
-            </button>
-          ))}
+          {MODULES.map((m) => {
+            const price = MODULE_PRICES[m]
+              ? fmtMoney(MODULE_PRICES[m])
+              : `${fmtMoney(RECURRING_MODULES[m])}/mo`
+            return (
+              <button
+                key={m}
+                className={lead.modules_selected.includes(m) ? 'chip selected' : 'chip'}
+                onClick={() => toggleModule(m)}
+              >
+                {m} · {price}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      <div className="money-box">
+        <span className="section-label">💰 Deal value</span>
+        <div className="deal-value-row">
+          <span className="deal-value">{fmtMoney(leadValue(lead))}</span>
+          {leadMonthly(lead) > 0 && (
+            <span className="deal-monthly">+{fmtMoney(leadMonthly(lead))}/mo</span>
+          )}
+        </div>
+        <div className="detail-grid">
+          <label className="field">
+            <span>Custom price (overrides modules)</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              value={lead.custom_value ?? ''}
+              placeholder="Auto from modules"
+              onChange={(e) =>
+                updateLead(lead.id, {
+                  custom_value: e.target.value === '' ? null : Number(e.target.value),
+                })
+              }
+            />
+          </label>
+          <label className="field">
+            <span>Collected so far</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              value={lead.amount_paid || ''}
+              placeholder="0"
+              onChange={(e) =>
+                updateLead(lead.id, { amount_paid: Number(e.target.value || 0) })
+              }
+            />
+          </label>
         </div>
       </div>
 

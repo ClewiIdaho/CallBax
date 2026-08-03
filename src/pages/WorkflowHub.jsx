@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useStore, fmtDate, isOverdue } from '../data/store'
-import { STATUS_COLORS } from '../data/constants'
+import { STATUS_COLORS, STATUS_EMOJI, leadValue, fmtMoney } from '../data/constants'
 import LeadDetail from './LeadDetail'
 
 const VIEWS = [
@@ -134,13 +134,16 @@ export default function WorkflowHub() {
                   className="status-pill"
                   style={{ background: STATUS_COLORS[l.pipeline_status] }}
                 >
-                  {l.pipeline_status}
+                  {STATUS_EMOJI[l.pipeline_status]} {l.pipeline_status}
                 </span>
               </div>
               <div className="lead-card-sub">
                 {l.category && <span>{l.category}</span>}
                 {l.phone && <span>{l.phone}</span>}
                 <span className="owner-tag">{l.owner}</span>
+                {leadValue(l) > 0 && (
+                  <span className="value-tag">{fmtMoney(leadValue(l))}</span>
+                )}
                 {view === 'follow-up' && l.follow_up_date && (
                   <span className={isOverdue(l.follow_up_date) ? 'due overdue' : 'due'}>
                     {isOverdue(l.follow_up_date) ? 'Overdue: ' : 'Due: '}

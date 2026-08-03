@@ -1,4 +1,5 @@
-/* CallBax — mobile-first, thumb-friendly. One stylesheet, kept simple. */
+/* CallBax — mobile-first, thumb-friendly. One stylesheet, kept simple.
+   Theme follows the phone's light/dark setting via the tokens below. */
 
 * {
   box-sizing: border-box;
@@ -7,16 +8,51 @@
 }
 
 :root {
-  --bg: #f3f4f6;
+  --bg: #f4f5f7;
   --card: #ffffff;
-  --ink: #111827;
+  --ink: #17181c;
   --muted: #6b7280;
   --line: #e5e7eb;
-  --accent: #111827;
-  --ricky: #2563eb;
-  --mac: #059669;
+  --accent: #6366f1;
+  --accent-ink: #ffffff;
+  --topbar: #14161c;
+  --money: #15803d;
+  --money-bg: #f0fdf4;
+  --money-line: #bbf7d0;
   --danger: #ef4444;
-  --radius: 12px;
+  --tint-blue-bg: #eff6ff;
+  --tint-blue-line: #bfdbfe;
+  --tint-purple-bg: #f5f3ff;
+  --tint-purple-line: #ddd6fe;
+  --done-bg: #f0fdf4;
+  --done-line: #86efac;
+  --done-ink: #166534;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --radius: 14px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1015;
+    --card: #181b22;
+    --ink: #e9ebf1;
+    --muted: #9aa1ae;
+    --line: #2a2e38;
+    --accent: #818cf8;
+    --accent-ink: #101223;
+    --topbar: #14161c;
+    --money: #4ade80;
+    --money-bg: #14231a;
+    --money-line: #1f5132;
+    --tint-blue-bg: #16202e;
+    --tint-blue-line: #1e3a5f;
+    --tint-purple-bg: #1e1a2e;
+    --tint-purple-line: #3b3363;
+    --done-bg: #14231a;
+    --done-line: #1f5132;
+    --done-ink: #86efac;
+    --shadow: none;
+  }
 }
 
 html,
@@ -34,6 +70,11 @@ body {
 button {
   font: inherit;
   cursor: pointer;
+  transition: transform 0.08s ease;
+}
+
+button:active {
+  transform: scale(0.97);
 }
 
 input,
@@ -56,7 +97,7 @@ select {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: var(--accent);
+  background: var(--topbar);
   color: #fff;
   padding: 12px 16px;
   padding-top: calc(12px + env(safe-area-inset-top));
@@ -64,12 +105,17 @@ select {
 
 .brand {
   font-weight: 800;
-  font-size: 1.2rem;
+  font-size: 1.25rem;
   letter-spacing: 0.5px;
+  background: linear-gradient(90deg, #818cf8, #2dd4bf);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
 }
 
 .user-switch {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.14);
   color: #fff;
   border: none;
   border-radius: 999px;
@@ -124,7 +170,7 @@ select {
 }
 
 .nav-btn.active {
-  color: var(--ink);
+  color: var(--accent);
 }
 
 .nav-icon {
@@ -135,11 +181,11 @@ select {
 
 .btn {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-ink);
   border: none;
   border-radius: var(--radius);
   padding: 12px 18px;
-  font-weight: 600;
+  font-weight: 700;
   min-height: 44px;
 }
 
@@ -151,6 +197,7 @@ select {
   background: none;
   color: var(--muted);
   border: 1px solid var(--line);
+  font-weight: 600;
 }
 
 .btn-big {
@@ -166,7 +213,7 @@ select {
   border: 2px dashed var(--line);
 }
 
-/* ---- user picker ---- */
+/* ---- user picker / login ---- */
 
 .user-picker {
   min-height: 100dvh;
@@ -179,7 +226,7 @@ select {
 }
 
 .user-picker .brand {
-  font-size: 2rem;
+  font-size: 2.2rem;
 }
 
 .user-picker-buttons {
@@ -207,14 +254,20 @@ select {
 .stat-card {
   background: var(--card);
   border-radius: var(--radius);
-  padding: 12px 8px;
+  padding: 12px 8px 10px;
   text-align: center;
   border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+}
+
+.stat-icon {
+  font-size: 1.1rem;
 }
 
 .stat-value {
   font-size: 1.5rem;
   font-weight: 800;
+  font-variant-numeric: tabular-nums;
 }
 
 .stat-label {
@@ -222,6 +275,80 @@ select {
   color: var(--muted);
   margin-top: 2px;
 }
+
+/* ---- money tracker ---- */
+
+.money-card {
+  background: var(--money-bg);
+  border: 1px solid var(--money-line);
+  border-radius: var(--radius);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.money-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.money-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+}
+
+.money-tile {
+  text-align: center;
+}
+
+.money-value {
+  font-size: 1.3rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.money-value.collected {
+  color: var(--money);
+}
+
+.money-label {
+  font-size: 0.7rem;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.money-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.progress-track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--money);
+  transition: width 0.4s ease;
+}
+
+.progress-caption {
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-align: right;
+}
+
+/* ---- feed ---- */
 
 .quick-add {
   display: flex;
@@ -234,6 +361,8 @@ select {
   border-radius: var(--radius);
   padding: 12px;
   min-height: 44px;
+  background: var(--card);
+  color: var(--ink);
 }
 
 .feed {
@@ -247,6 +376,7 @@ select {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 12px;
+  box-shadow: var(--shadow);
 }
 
 .feed-meta {
@@ -261,11 +391,20 @@ select {
 }
 
 .author-ricky {
-  color: var(--ricky);
+  color: #60a5fa;
 }
 
 .author-mac {
-  color: var(--mac);
+  color: #34d399;
+}
+
+@media (prefers-color-scheme: light) {
+  .author-ricky {
+    color: #2563eb;
+  }
+  .author-mac {
+    color: #059669;
+  }
 }
 
 .timestamp {
@@ -311,7 +450,7 @@ select {
 
 .view-tab.active {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-ink);
   border-color: var(--accent);
 }
 
@@ -330,6 +469,8 @@ select {
   border-radius: var(--radius);
   padding: 12px;
   min-height: 44px;
+  background: var(--bg);
+  color: var(--ink);
 }
 
 .form-row {
@@ -354,6 +495,8 @@ select {
   border-radius: var(--radius);
   padding: 12px;
   width: 100%;
+  color: var(--ink);
+  box-shadow: var(--shadow);
 }
 
 .lead-card-top {
@@ -384,10 +527,21 @@ select {
   margin-top: 6px;
   font-size: 0.8rem;
   color: var(--muted);
+  align-items: center;
 }
 
 .owner-tag {
   font-weight: 600;
+}
+
+.value-tag {
+  font-weight: 700;
+  color: var(--money);
+  background: var(--money-bg);
+  border: 1px solid var(--money-line);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-variant-numeric: tabular-nums;
 }
 
 .due.overdue {
@@ -411,9 +565,9 @@ select {
 }
 
 .tl-step.done {
-  background: #dcfce7;
-  border-color: #22c55e;
-  color: #166534;
+  background: var(--done-bg);
+  border-color: var(--done-line);
+  color: var(--done-ink);
   font-weight: 600;
 }
 
@@ -467,6 +621,7 @@ select {
   width: 22px;
   height: 22px;
   min-height: 0;
+  accent-color: var(--accent);
 }
 
 .section-label {
@@ -479,17 +634,42 @@ select {
 
 .modules,
 .notes,
-.contract-box {
+.contract-box,
+.money-box {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
 .contract-box {
-  background: #f5f3ff;
-  border: 1px solid #ddd6fe;
+  background: var(--tint-purple-bg);
+  border: 1px solid var(--tint-purple-line);
   border-radius: var(--radius);
   padding: 12px;
+}
+
+.money-box {
+  background: var(--money-bg);
+  border: 1px solid var(--money-line);
+  border-radius: var(--radius);
+  padding: 12px;
+}
+
+.deal-value-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.deal-value {
+  font-size: 1.6rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.deal-monthly {
+  font-weight: 700;
+  color: var(--money);
 }
 
 .module-chips {
@@ -510,7 +690,7 @@ select {
 
 .chip.selected {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-ink);
   border-color: var(--accent);
   font-weight: 600;
 }
@@ -523,11 +703,13 @@ select {
   padding: 14px;
   font-size: 1.1rem;
   width: 100%;
+  background: var(--card);
+  color: var(--ink);
 }
 
 .matched-lead {
-  background: #eff6ff;
-  border: 1px solid #bfdbfe;
+  background: var(--tint-blue-bg);
+  border: 1px solid var(--tint-blue-line);
   border-radius: var(--radius);
   padding: 10px 12px;
   font-size: 0.85rem;
@@ -593,12 +775,13 @@ select {
   padding: 12px;
   min-height: 52px;
   width: 100%;
+  color: var(--ink);
 }
 
 .check-item.done {
-  background: #f0fdf4;
-  border-color: #86efac;
-  color: #166534;
+  background: var(--done-bg);
+  border-color: var(--done-line);
+  color: var(--done-ink);
 }
 
 .checkbox {
@@ -625,7 +808,7 @@ select {
 .outcome-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
+  background: rgba(0, 0, 0, 0.5);
   display: flex;
   align-items: flex-end;
   z-index: 20;
