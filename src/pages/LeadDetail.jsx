@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { useStore, fmtDateTime } from '../data/store'
+import { useStore, fmtDateTime, todayStr } from '../data/store'
+import { proposalMailtoHref } from '../data/proposal'
 import {
   PIPELINE_STATUSES,
   STATUS_COLORS,
@@ -14,8 +15,18 @@ import {
 } from '../data/constants'
 
 export default function LeadDetail({ lead, onBack }) {
-  const { updateLead, addNote, postActivity } = useStore()
+  const { currentUser, updateLead, addNote, postActivity } = useStore()
   const [noteDraft, setNoteDraft] = useState('')
+
+  function sendProposal() {
+    // Opens the mail app with the proposal pre-written, and marks it sent.
+    window.location.href = proposalMailtoHref(lead, currentUser)
+    updateLead(lead.id, {
+      pipeline_status: 'Proposal Sent',
+      proposal_sent_date: todayStr(),
+    })
+    postActivity(`📨 Proposal sent to ${lead.business_name}`, lead.id)
+  }
 
   function changeStatus(status) {
     updateLead(lead.id, { pipeline_status: status })
@@ -100,6 +111,16 @@ export default function LeadDetail({ lead, onBack }) {
         </label>
 
         <label className="field">
+          <span>Email</span>
+          <input
+            value={lead.email || ''}
+            type="email"
+            placeholder="owner@business.com"
+            onChange={(e) => updateLead(lead.id, { email: e.target.value })}
+          />
+        </label>
+
+        <label className="field">
           <span>Owner</span>
           <select
             value={lead.owner}
@@ -148,6 +169,12 @@ export default function LeadDetail({ lead, onBack }) {
           })}
         </div>
       </div>
+
+      {lead.email && (
+        <button className="btn btn-big send-proposal-btn" onClick={sendProposal}>
+          📨 Send proposal to {lead.email}
+        </button>
+      )}
 
       <div className="money-box">
         <span className="section-label">💰 Deal value</span>

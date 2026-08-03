@@ -1029,6 +1029,27 @@ select {
   margin-top: 20px;
 }
 
+.email-capture {
+  display: flex;
+  gap: 8px;
+}
+
+.email-capture input {
+  flex: 1;
+  border: 2px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 12px;
+  min-height: 48px;
+  background: var(--card);
+  color: var(--ink);
+  font-size: 1rem;
+}
+
+.send-proposal-btn {
+  background: #16a34a;
+  color: #fff;
+}
+
 /* ---- outcome picker sheet ---- */
 
 .outcome-overlay {

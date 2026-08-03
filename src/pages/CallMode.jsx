@@ -12,8 +12,11 @@ export default function CallMode({
   script,
   businessName,
   phone,
+  email,
   setChecked,
   onLogOutcome,
+  onSaveEmail,
+  onSendProposal,
   onClose,
   onNextCall,
 }) {
@@ -22,6 +25,15 @@ export default function CallMode({
   const [showObjection, setShowObjection] = useState(false)
   const [loggedOutcome, setLoggedOutcome] = useState(null)
   const [logging, setLogging] = useState(false)
+  const [emailDraft, setEmailDraft] = useState(email || '')
+  const [emailSaved, setEmailSaved] = useState(!!email)
+
+  async function saveEmail() {
+    const value = emailDraft.trim()
+    if (!value) return
+    const ok = await onSaveEmail(value)
+    if (ok) setEmailSaved(true)
+  }
 
   const sections = script.sections
   const opener = sections.find((s) => s.title === 'Opener')
@@ -171,6 +183,24 @@ export default function CallMode({
           <>
             <div className="callmode-label">Close — ask for their email</div>
             <p className="callmode-text">{fill(closeSection.text)}</p>
+            <div className="email-capture">
+              <input
+                type="email"
+                value={emailDraft}
+                onChange={(e) => {
+                  setEmailDraft(e.target.value)
+                  setEmailSaved(false)
+                }}
+                placeholder="Type their email as they say it…"
+              />
+              <button
+                className="btn"
+                disabled={!emailDraft.trim() || emailSaved}
+                onClick={saveEmail}
+              >
+                {emailSaved ? '✓' : 'Save'}
+              </button>
+            </div>
             <div className="callmode-actions">
               <button
                 className="btn btn-big"
@@ -210,6 +240,11 @@ export default function CallMode({
               {loggedOutcome} logged for {businessName}
             </div>
             <div className="callmode-actions">
+              {emailSaved && (
+                <button className="btn btn-big send-proposal-btn" onClick={onSendProposal}>
+                  📨 Send proposal now
+                </button>
+              )}
               <button className="btn btn-big" onClick={onNextCall}>
                 Next call
               </button>
