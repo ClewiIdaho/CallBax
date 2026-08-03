@@ -20,6 +20,48 @@ function json(body: unknown, status = 200) {
 const SOCIAL_RE =
   /facebook\.com|fb\.com|instagram\.com|linktr\.ee|tiktok\.com|m\.me|wa\.me|bit\.ly/i
 
+// 24h search cache in Postgres (discover_cache table, service-role only) —
+// repeat searches skip the rate-limited Overpass API entirely, and a stale
+// hit is still better than an error when Overpass is throttling us.
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
+const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+const CACHE_TTL_MS = 24 * 3600 * 1000
+
+async function cacheGet(
+  key: string
+): Promise<{ payload: unknown; fresh: boolean } | null> {
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/discover_cache?key=eq.${encodeURIComponent(key)}&select=payload,created_at`,
+      { headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` } }
+    )
+    if (!res.ok) return null
+    const rows = await res.json()
+    if (!Array.isArray(rows) || rows.length === 0) return null
+    const age = Date.now() - new Date(rows[0].created_at).getTime()
+    return { payload: rows[0].payload, fresh: age < CACHE_TTL_MS }
+  } catch (_e) {
+    return null
+  }
+}
+
+async function cacheSet(key: string, payload: unknown) {
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/discover_cache?on_conflict=key`, {
+      method: 'POST',
+      headers: {
+        apikey: SERVICE_KEY,
+        Authorization: `Bearer ${SERVICE_KEY}`,
+        'Content-Type': 'application/json',
+        Prefer: 'resolution=merge-duplicates',
+      },
+      body: JSON.stringify({ key, payload, created_at: new Date().toISOString() }),
+    })
+  } catch (_e) {
+    // cache write is best-effort
+  }
+}
+
 // Geocode cache — persists for the life of this function instance.
 const geoCache = new Map<string, { lat: number; lon: number }>()
 
@@ -70,8 +112,28 @@ async function geocode(location: string): Promise<{ lat: number; lon: number } |
   return null
 }
 
+// Specific business types — each entry is a list of Overpass tag filters.
+const CATEGORY_SELECTORS: Record<string, string[]> = {
+  restaurants: ['"amenity"~"^(restaurant|fast_food|ice_cream|food_court)$"'],
+  coffee: ['"amenity"="cafe"', '"shop"="coffee"'],
+  bars: ['"amenity"~"^(bar|pub)$"'],
+  barber: ['"shop"~"^(hairdresser|barber|beauty)$"'],
+  vape: ['"shop"~"^(e-cigarette|tobacco|cannabis)$"'],
+  tattoo: ['"shop"~"^(tattoo|piercing)$"'],
+  auto: [
+    '"shop"~"^(car_repair|car_parts|car|tyres)$"',
+    '"amenity"~"^(car_wash|car_repair)$"',
+  ],
+  gym: ['"leisure"="fitness_centre"', '"shop"="sports"'],
+  pets: ['"shop"~"^(pet|pet_grooming)$"', '"amenity"="veterinary"'],
+}
+
 // Overpass tag selectors per category filter.
 function overpassSelectors(category: string, around: string): string {
+  const specific = CATEGORY_SELECTORS[category]
+  if (specific) {
+    return specific.map((sel) => `nwr["name"][${sel}]${around};`).join('\n')
+  }
   const food = `
     nwr["name"]["amenity"~"^(restaurant|cafe|fast_food|bar|pub|ice_cream|food_court)$"]${around};
     nwr["name"]["shop"~"^(bakery|deli|confectionery|coffee|butcher|greengrocer)$"]${around};`
@@ -80,6 +142,7 @@ function overpassSelectors(category: string, around: string): string {
   const services = `
     nwr["name"]["office"]${around};
     nwr["name"]["craft"]${around};
+    nwr["name"]["leisure"="fitness_centre"]${around};
     nwr["name"]["amenity"~"^(dentist|clinic|veterinary|car_wash|car_repair)$"]${around};
     nwr["name"]["shop"~"^(hairdresser|beauty|massage|tattoo|car_repair|laundry|dry_cleaning|pet_grooming|optician)$"]${around};`
   if (category === 'food') return food
@@ -90,7 +153,13 @@ function overpassSelectors(category: string, around: string): string {
 
 function prettyCategory(tags: Record<string, string>): string {
   const raw =
-    tags.cuisine || tags.shop || tags.amenity || tags.office || tags.craft || ''
+    tags.cuisine ||
+    tags.shop ||
+    tags.amenity ||
+    tags.office ||
+    tags.craft ||
+    (tags.leisure === 'fitness_centre' ? 'gym' : '') ||
+    ''
   return raw.split(';')[0].replaceAll('_', ' ')
 }
 
@@ -99,6 +168,13 @@ Deno.serve(async (req: Request) => {
   try {
     const { location = 'Boise, ID', radiusMiles = 3, category = 'all' } =
       await req.json()
+
+    // 0. Serve a fresh cached search if we have one.
+    const cacheKey = `${location.trim().toLowerCase()}|${radiusMiles}|${category}`
+    const cached = await cacheGet(cacheKey)
+    if (cached?.fresh) {
+      return json({ ...(cached.payload as object), cached: true })
+    }
 
     // 1. Geocode the location text.
     const center = await geocode(location)
@@ -140,6 +216,10 @@ Deno.serve(async (req: Request) => {
       }
     }
     if (!data) {
+      // Overpass is throttling us — a stale cached result beats an error.
+      if (cached) {
+        return json({ ...(cached.payload as object), cached: true })
+      }
       return json({ error: 'Map data service is busy — try again in a minute.', debug }, 200)
     }
 
@@ -177,7 +257,9 @@ Deno.serve(async (req: Request) => {
       if (results.length >= 80) break
     }
 
-    return json({ results, center: { lat, lon } })
+    const payload = { results, center: { lat, lon } }
+    await cacheSet(cacheKey, payload)
+    return json(payload)
   } catch (e) {
     return json({ error: `Search failed: ${e instanceof Error ? e.message : e}` }, 200)
   }
