@@ -4,11 +4,13 @@ import { USERS } from './data/constants'
 import HomeHub from './pages/HomeHub'
 import WorkflowHub from './pages/WorkflowHub'
 import ScriptsHub from './pages/ScriptsHub'
+import DiscoverHub from './pages/DiscoverHub'
 
 const TABS = [
   { key: 'home', label: 'Home', icon: '🏠' },
   { key: 'workflow', label: 'Workflow', icon: '📋' },
   { key: 'scripts', label: 'Scripts', icon: '📞' },
+  { key: 'discover', label: 'Discover', icon: '🧭' },
 ]
 
 function LoginScreen() {
@@ -51,6 +53,8 @@ function LoginScreen() {
 export default function App() {
   const { session, currentUser, setCurrentUser } = useStore()
   const [tab, setTab] = useState('home')
+  // Set by Discover's "Call now" so the Scripts hub opens pre-filled.
+  const [scriptBusiness, setScriptBusiness] = useState('')
 
   if (session === undefined) {
     return (
@@ -101,7 +105,15 @@ export default function App() {
       <main className="content">
         {tab === 'home' && <HomeHub />}
         {tab === 'workflow' && <WorkflowHub />}
-        {tab === 'scripts' && <ScriptsHub />}
+        {tab === 'scripts' && <ScriptsHub initialBusiness={scriptBusiness} />}
+        {tab === 'discover' && (
+          <DiscoverHub
+            onCallNow={(name) => {
+              setScriptBusiness(name)
+              setTab('scripts')
+            }}
+          />
+        )}
       </main>
 
       <nav className="bottom-nav">
