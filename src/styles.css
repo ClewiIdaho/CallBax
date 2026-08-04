@@ -881,6 +881,53 @@ select {
   padding: 10px 8px;
 }
 
+.presence-tag.website {
+  background: var(--line);
+  color: var(--muted);
+}
+
+.discover-filter {
+  flex: none;
+  margin-bottom: 4px;
+}
+
+.discover-filter .seg-btn {
+  font-size: 0.78rem;
+}
+
+.discover-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 6px;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.discover-meta .open-now {
+  color: #16a34a;
+  font-weight: 600;
+}
+
+.discover-meta .closed-now {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.discover-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 6px;
+  font-size: 0.78rem;
+}
+
+.discover-links a {
+  color: var(--accent);
+  text-decoration: underline;
+  word-break: break-all;
+}
+
 /* ---- call banner + call mode ---- */
 
 .call-row {

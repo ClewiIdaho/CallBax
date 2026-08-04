@@ -19,7 +19,22 @@ const CATEGORIES = [
   { key: 'services', label: '🧰 Services (broad)' },
 ]
 
+const PRESENCE_FILTERS = [
+  { key: 'all', label: 'All' },
+  { key: 'none', label: 'No website' },
+  { key: 'social', label: 'Social only' },
+]
+
 const normPhone = (p) => (p || '').replace(/\D/g, '').slice(-10)
+const bizKey = (b) => b.placeId || b.name
+
+function siteHost(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '')
+  } catch {
+    return url
+  }
+}
 
 export default function DiscoverHub({ onCallNow }) {
   const { leads, addLead, currentUser } = useStore()
@@ -32,7 +47,10 @@ export default function DiscoverHub({ onCallNow }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [fromCache, setFromCache] = useState(false)
-  const [added, setAdded] = useState({}) // business name -> true once added
+  const [source, setSource] = useState('')
+  const [budgetExhausted, setBudgetExhausted] = useState(false)
+  const [presenceFilter, setPresenceFilter] = useState('all')
+  const [added, setAdded] = useState({}) // placeId/name -> true once added
 
   // Hide anything already in the pipeline (match by name or phone).
   function isKnown(b) {
@@ -45,6 +63,7 @@ export default function DiscoverHub({ onCallNow }) {
 
   async function search(e) {
     e?.preventDefault()
+    if (loading) return
     setLoading(true)
     setError(null)
     setResults(null)
@@ -62,23 +81,33 @@ export default function DiscoverHub({ onCallNow }) {
       return
     }
     setFromCache(!!data.cached)
+    setSource(data.source || '')
+    setBudgetExhausted(!!data.budgetExhausted)
     setResults(data.results.filter((b) => !isKnown(b)))
   }
 
   async function addBiz(b) {
-    const noteText = [b.address, 'Found via Discover'].filter(Boolean).join(' · ')
+    const noteText = [
+      b.address,
+      b.website && `Site: ${b.website}`,
+      b.rating && `★${b.rating} (${b.reviewCount})`,
+      b.mapsUrl,
+      'Found via Discover',
+    ]
+      .filter(Boolean)
+      .join(' · ')
     const lead = await addLead({
       business_name: b.name,
       category: b.category,
       phone: b.phone,
       notes: [{ at: new Date().toISOString(), by: currentUser || 'Ricky', text: noteText }],
     })
-    if (lead) setAdded((a) => ({ ...a, [b.name]: true }))
+    if (lead) setAdded((a) => ({ ...a, [bizKey(b)]: true }))
     return lead
   }
 
   async function callNow(b) {
-    const lead = added[b.name] ? true : await addBiz(b)
+    const lead = added[bizKey(b)] ? true : await addBiz(b)
     if (!lead) return
     onCallNow(b.name)
     // Pop the phone's dialer with the number loaded (one tap to connect).
@@ -86,6 +115,20 @@ export default function DiscoverHub({ onCallNow }) {
       window.location.href = 'tel:' + b.phone.replace(/[^+\d]/g, '')
     }
   }
+
+  const counts = { all: 0, none: 0, social: 0 }
+  if (results) {
+    counts.all = results.length
+    for (const b of results) {
+      if (b.presence === 'none') counts.none++
+      else if (b.presence === 'social') counts.social++
+    }
+  }
+  const visible = results
+    ? presenceFilter === 'all'
+      ? results
+      : results.filter((b) => b.presence === presenceFilter)
+    : []
 
   return (
     <div className="page">
@@ -125,7 +168,7 @@ export default function DiscoverHub({ onCallNow }) {
           {loading ? 'Searching…' : '🔎 Find businesses'}
         </button>
         {loading && (
-          <p className="empty">Scanning the map for businesses with no website — can take ~20 seconds…</p>
+          <p className="empty">Searching Google for local businesses…</p>
         )}
         {error && <p className="login-error">{error}</p>}
       </form>
@@ -133,20 +176,51 @@ export default function DiscoverHub({ onCallNow }) {
       {results && (
         <div className="lead-list">
           <p className="discover-count">
-            {results.length} {results.length === 1 ? 'business' : 'businesses'} with no
-            real website nearby{fromCache ? ' · from today’s earlier search' : ''}
+            {counts.all} local {counts.all === 1 ? 'business' : 'businesses'} nearby
+            {source === 'osm' ? ' · map data (fallback)' : ''}
+            {fromCache ? ' · from today’s earlier search' : ''}
           </p>
-          {results.length === 0 && (
+          {budgetExhausted && (
             <p className="empty">
-              No new prospects found. Try a wider radius or a different category.
+              Daily search budget reached — showing cached/map data.
             </p>
           )}
-          {results.map((b) => (
-            <div key={b.name} className="lead-card discover-card">
+          <div className="segmented discover-filter">
+            {PRESENCE_FILTERS.map((f) => (
+              <button
+                key={f.key}
+                type="button"
+                className={presenceFilter === f.key ? 'seg-btn active' : 'seg-btn'}
+                onClick={() => setPresenceFilter(f.key)}
+              >
+                {f.label} ({counts[f.key]})
+              </button>
+            ))}
+          </div>
+          {visible.length === 0 && (
+            <p className="empty">
+              No new prospects here. Try a wider radius, another category, or a
+              different filter.
+            </p>
+          )}
+          {visible.map((b) => (
+            <div key={bizKey(b)} className="lead-card discover-card">
               <div className="lead-card-top">
                 <span className="lead-name">{b.name}</span>
-                <span className={b.presence === 'social' ? 'presence-tag social' : 'presence-tag'}>
-                  {b.presence === 'social' ? 'Social Only' : 'No Website'}
+                <span
+                  className={
+                    b.presence === 'website'
+                      ? 'presence-tag website'
+                      : b.presence === 'social'
+                        ? 'presence-tag social'
+                        : 'presence-tag'
+                  }
+                >
+                  {b.presence === 'website'
+                    ? 'Has Website'
+                    : b.presence === 'social'
+                      ? 'Social Only'
+                      : 'No Website'}
                 </span>
               </div>
               <div className="lead-card-sub">
@@ -154,13 +228,42 @@ export default function DiscoverHub({ onCallNow }) {
                 {b.phone && <span>{b.phone}</span>}
                 {b.address && <span>{b.address}</span>}
               </div>
+              {(b.rating || b.openNow !== null || b.businessStatus === 'CLOSED_TEMPORARILY') && (
+                <div className="discover-meta">
+                  {b.rating && (
+                    <span>★ {b.rating} ({b.reviewCount})</span>
+                  )}
+                  {b.openNow !== null && (
+                    <span className={b.openNow ? 'open-now' : 'closed-now'}>
+                      {b.openNow ? 'Open now' : 'Closed'}
+                    </span>
+                  )}
+                  {b.businessStatus === 'CLOSED_TEMPORARILY' && (
+                    <span className="closed-now">Temporarily closed</span>
+                  )}
+                </div>
+              )}
+              {(b.website || b.mapsUrl) && (
+                <div className="discover-links">
+                  {b.website && (
+                    <a href={b.website} target="_blank" rel="noreferrer">
+                      {siteHost(b.website)}
+                    </a>
+                  )}
+                  {b.mapsUrl && (
+                    <a href={b.mapsUrl} target="_blank" rel="noreferrer">
+                      Maps ↗
+                    </a>
+                  )}
+                </div>
+              )}
               <div className="discover-actions">
                 <button
                   className="btn btn-ghost"
-                  disabled={!!added[b.name]}
+                  disabled={!!added[bizKey(b)]}
                   onClick={() => addBiz(b)}
                 >
-                  {added[b.name] ? '✓ In workflow' : '+ Workflow'}
+                  {added[bizKey(b)] ? '✓ In workflow' : '+ Workflow'}
                 </button>
                 <button className="btn" onClick={() => callNow(b)}>
                   📞 Call now
@@ -173,8 +276,8 @@ export default function DiscoverHub({ onCallNow }) {
 
       {!results && !loading && (
         <p className="empty">
-          Find nearby businesses that have no website — your best cold-call targets,
-          straight off the map.
+          Find local businesses nearby — see who has no website, who's
+          social-only, and who already has a real site.
         </p>
       )}
     </div>
