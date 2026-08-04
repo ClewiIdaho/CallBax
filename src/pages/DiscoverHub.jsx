@@ -168,7 +168,7 @@ export default function DiscoverHub({ onCallNow }) {
           {loading ? 'Searching…' : '🔎 Find businesses'}
         </button>
         {loading && (
-          <p className="empty">Searching Google for local businesses…</p>
+          <p className="empty">Searching local business listings…</p>
         )}
         {error && <p className="login-error">{error}</p>}
       </form>
@@ -177,7 +177,7 @@ export default function DiscoverHub({ onCallNow }) {
         <div className="lead-list">
           <p className="discover-count">
             {counts.all} local {counts.all === 1 ? 'business' : 'businesses'} nearby
-            {source === 'osm' ? ' · map data (fallback)' : ''}
+            {source === 'osm' ? ' · OpenStreetMap' : source === 'google' ? ' · Google' : ''}
             {fromCache ? ' · from today’s earlier search' : ''}
           </p>
           {budgetExhausted && (

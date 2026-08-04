@@ -9,15 +9,15 @@
 // (~1,000 free calls/month as of Google's March 2025 pricing — verify the
 // field→SKU tiers at developers.google.com/maps/billing-and-pricing before
 // changing FIELD_MASK). Cost protection is layered:
-//   1. 24h search cache in Postgres (discover_cache).
+//   1. 72h search cache in Postgres (discover_cache).
 //   2. App-level budget counters (default 30 calls/day, 900/month) stored in
 //      the same table under budget|* keys.
 //   3. A hard requests/day quota cap set in the Google Cloud console
 //      (see README) — the real can't-ever-bill backstop.
 //
-// Fallback source: OpenStreetMap (Photon/Nominatim geocoding + Overpass) —
-// free and keyless. Used when the Google key is unset, the budget is
-// exhausted with no cache to serve, or the Google request fails.
+// Free fallback (and the default when no key is set): OpenStreetMap, via
+// Nominatim first and Overpass only as a last resort. Also used when the
+// budget is exhausted with no cache to serve, or the Google request fails.
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -31,12 +31,21 @@ function json(body: unknown, status = 200) {
   })
 }
 
+// Sent to every OSM service we call — Nominatim's usage policy requires a
+// real identifying User-Agent, and Overpass throttles anonymous clients harder.
+const USER_AGENT = 'CallBax/1.0 (two-person internal sales tool)'
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 const GOOGLE_KEY = Deno.env.get('GOOGLE_PLACES_API_KEY') ?? ''
 const DAILY_BUDGET = Number(Deno.env.get('DISCOVER_DAILY_BUDGET') ?? 30)
 const MONTHLY_BUDGET = Number(Deno.env.get('DISCOVER_MONTHLY_BUDGET') ?? 900)
-const CACHE_TTL_MS = 24 * 3600 * 1000
+// 3 days. Business listings change slowly, and the free map servers this
+// falls back on are unreliable enough that a longer cache is the difference
+// between a search that works and one that errors out.
+const CACHE_TTL_MS = 72 * 3600 * 1000
 
 // ---------------------------------------------------------------------------
 // Web-presence classification
@@ -484,44 +493,239 @@ function prettyCategory(tags: Record<string, string>): string {
   return raw.split(';')[0].replaceAll('_', ' ')
 }
 
+// ---------------------------------------------------------------------------
+// Nominatim search — the free path's primary source.
+//
+// Overpass is the "proper" tool for radius searches, but every public mirror
+// is heavily overloaded and rate-limits shared cloud IPs like Supabase's:
+// measured from this function, mirrors return 429 or time out after 30s.
+// Nominatim answers the same OSM data in ~1-2s, and with extratags=1 it
+// carries the website/phone tags this feature is built around. Its usage
+// policy allows this kind of low-volume use as long as we stay under one
+// request per second and send a real User-Agent — hence the spacing below,
+// the small number of terms per search, and the 72h cache.
+// ---------------------------------------------------------------------------
+
+// Nominatim matches OSM "special phrases", so terms must be real category
+// names — verified against the live API. Invented phrases ("vape shop",
+// "beauty salon") silently return nothing, so only add terms you've checked.
+const NOMINATIM_TERMS: Record<string, string[]> = {
+  all: ['restaurant', 'cafe', 'bar', 'hairdresser', 'car repair'],
+  restaurants: ['restaurant', 'fast food'],
+  coffee: ['cafe'],
+  bars: ['bar', 'pub'],
+  barber: ['hairdresser'],
+  vape: ['tobacco'],
+  tattoo: ['tattoo'],
+  auto: ['car repair', 'car wash'],
+  gym: ['gym'],
+  pets: ['veterinary', 'pet shop'],
+  food: ['restaurant', 'cafe', 'fast food', 'bakery'],
+  retail: ['bakery', 'pet shop', 'tobacco'],
+  services: ['hairdresser', 'car repair', 'laundry'],
+}
+
+// Nominatim restricts to a rectangle, not a circle, so results get filtered
+// by true distance afterwards.
+function viewboxAround(center: { lat: number; lon: number }, radiusMiles: number): string {
+  const dLat = radiusMiles / 69
+  const dLon = radiusMiles / (69 * Math.cos((center.lat * Math.PI) / 180))
+  return [center.lon - dLon, center.lat + dLat, center.lon + dLon, center.lat - dLat].join(',')
+}
+
+async function searchNominatim(
+  center: { lat: number; lon: number },
+  radiusMiles: number,
+  category: string,
+  debug: string[]
+): Promise<Biz[]> {
+  const terms = NOMINATIM_TERMS[category] ?? NOMINATIM_TERMS.all
+  const viewbox = viewboxAround(center, radiusMiles)
+
+  // OSM frequently holds the same business twice — a bare node plus a fully
+  // tagged one. Keeping whichever arrived first would report a business that
+  // HAS a website as having none, which is the exact mistake this feature
+  // exists to avoid. So collect by name and keep the best-documented copy.
+  const byName = new Map<string, Biz>()
+  const infoScore = (b: Biz) => (b.website ? 2 : 0) + (b.phone ? 1 : 0)
+
+  for (const [i, term] of terms.entries()) {
+    if (i > 0) await sleep(1_100) // stay under Nominatim's 1 req/s policy
+    const url =
+      'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=50' +
+      `&extratags=1&addressdetails=1&bounded=1&viewbox=${viewbox}&q=${encodeURIComponent(term)}`
+    try {
+      const res = await fetch(url, {
+        headers: { 'User-Agent': USER_AGENT },
+        signal: AbortSignal.timeout(15_000),
+      })
+      if (!res.ok) {
+        debug.push(`nominatim "${term}" -> ${res.status}`)
+        continue
+      }
+      const rows = await res.json()
+      debug.push(`nominatim "${term}" -> ${Array.isArray(rows) ? rows.length : 0}`)
+      if (!Array.isArray(rows)) continue
+
+      for (const r of rows) {
+        const name = (r.name || '').trim()
+        if (!name) continue
+
+        const tags: Record<string, string> = r.extratags ?? {}
+        if (tags.brand || tags['brand:wikidata']) continue // national chain
+        if (isChain(name)) continue
+
+        const distance = haversineMiles(center, { lat: Number(r.lat), lon: Number(r.lon) })
+        if (!Number.isFinite(distance) || distance > radiusMiles) continue
+
+        const id = `${r.osm_type ?? ''}${r.osm_id ?? ''}`
+        const website = tags.website || tags['contact:website'] || tags.url || ''
+        let presence = classifyPresence(website)
+        if (presence === 'none' && (tags['contact:facebook'] || tags['contact:instagram'])) {
+          presence = 'social'
+        }
+        const addr = r.address ?? {}
+        const street = [addr.house_number, addr.road].filter(Boolean).join(' ')
+
+        const biz: Biz = {
+          placeId: id,
+          name,
+          category: String(r.type ?? '').replaceAll('_', ' '),
+          phone: tags.phone || tags['contact:phone'] || '',
+          address: street || addr.neighbourhood || addr.city || '',
+          website: presence === 'none' ? '' : website,
+          presence,
+          rating: null,
+          reviewCount: 0,
+          openNow: null,
+          hoursToday: tags.opening_hours ?? '',
+          businessStatus: 'OPERATIONAL',
+          // Plain Maps search link so a lead can be eyeballed before calling.
+          // It's just a URL — no API involved, nothing billable.
+          mapsUrl:
+            'https://www.google.com/maps/search/?api=1&query=' +
+            encodeURIComponent([name, street, addr.city].filter(Boolean).join(' ')),
+        }
+
+        const key = name.toLowerCase()
+        const existing = byName.get(key)
+        if (!existing || infoScore(biz) > infoScore(existing)) byName.set(key, biz)
+      }
+    } catch (e) {
+      debug.push(`nominatim "${term}" -> ${e instanceof Error ? e.message : e}`)
+    }
+  }
+
+  const results = [...byName.values()]
+  sortBizzes(results)
+  // Cap generously. Results are sorted no-website-first, so a tight cap would
+  // truncate away every business that HAS a website — and the point of this
+  // page is to show the whole local field, not just the leads. Broad searches
+  // top out near 250 (5 terms x 50), which is a fine payload to cache.
+  return results.slice(0, 250)
+}
+
+// Public Overpass mirrors. Only full-planet instances belong here: regional
+// ones (overpass.osm.ch, for example) answer fast with ZERO results, which
+// would silently look like "no businesses nearby". overpass.osm.jp is also
+// excluded — its TLS certificate is expired.
+const OVERPASS_MIRRORS = [
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
+]
+
+// These free servers are heavily loaded: a successful query commonly takes
+// 12-30s, and any given mirror may be timing out or 504ing at any moment.
+// So we hedge instead of waiting in line — start one mirror, and if it
+// hasn't answered within STAGGER, start the next one alongside it. The
+// first usable response wins and the stragglers are aborted. Sequential
+// attempts would add up to minutes; this caps the wait at roughly TIMEOUT.
+const MIRROR_TIMEOUT_MS = 30_000
+const HEDGE_STAGGER_MS = 5_000
+
+// deno-lint-ignore no-explicit-any
+async function queryOverpass(query: string, debug: string[]): Promise<{ elements?: any[] } | null> {
+  const order = [...OVERPASS_MIRRORS].sort(() => Math.random() - 0.5)
+  const done = new AbortController()
+  const startedAt = Date.now()
+  const label = (m: string) => new URL(m).hostname
+
+  const attempt = async (mirror: string, index: number) => {
+    if (index > 0) {
+      await new Promise((r) => setTimeout(r, index * HEDGE_STAGGER_MS))
+    }
+    if (done.signal.aborted) throw new Error('not needed')
+
+    // Abort on either our own timeout or a sibling mirror winning the race.
+    // (Built by hand rather than with AbortSignal.any for runtime portability.)
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), MIRROR_TIMEOUT_MS)
+    const cancel = () => ctrl.abort()
+    done.signal.addEventListener('abort', cancel)
+    try {
+      const res = await fetch(mirror, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'User-Agent': 'CallBax/1.0 (two-person internal sales tool)',
+        },
+        body: 'data=' + encodeURIComponent(query),
+        signal: ctrl.signal,
+      })
+      const secs = ((Date.now() - startedAt) / 1000).toFixed(1)
+      if (!res.ok) {
+        debug.push(`${label(mirror)} -> ${res.status} (${secs}s)`)
+        throw new Error(`${label(mirror)} ${res.status}`)
+      }
+      const data = await res.json()
+      debug.push(`${label(mirror)} -> 200 (${secs}s)`)
+      return data
+    } catch (e) {
+      const secs = ((Date.now() - startedAt) / 1000).toFixed(1)
+      const msg = e instanceof Error ? e.message : String(e)
+      if (!msg.includes(label(mirror))) debug.push(`${label(mirror)} -> ${msg} (${secs}s)`)
+      throw e
+    } finally {
+      clearTimeout(timer)
+      done.signal.removeEventListener('abort', cancel)
+    }
+  }
+
+  try {
+    // Promise.any settles on the first mirror to return usable JSON.
+    return await Promise.any(order.map(attempt))
+  } catch (_allFailed) {
+    return null
+  } finally {
+    done.abort() // stop whatever is still in flight
+  }
+}
+
+// The free (no-key) search: Nominatim first because it actually responds,
+// then Overpass only if Nominatim found nothing — Overpass covers the broad
+// "retail"/"services" categories better, when it happens to be up.
 async function searchOsm(
   center: { lat: number; lon: number },
   radiusMiles: number,
   category: string
 ): Promise<{ results: Biz[] } | { error: string; debug: string[] }> {
+  const debug: string[] = []
+
+  const fromNominatim = await searchNominatim(center, radiusMiles, category, debug)
+  if (fromNominatim.length > 0) return { results: fromNominatim }
+
   const radiusM = Math.min(Math.round(Number(radiusMiles) * 1609), 16000)
   const around = `(around:${radiusM},${center.lat},${center.lon})`
-  const query = `[out:json][timeout:25];(${overpassSelectors(category, around)});out center tags 400;`
+  const query = `[out:json][timeout:30];(${overpassSelectors(category, around)});out center tags 400;`
 
-  // Public Overpass mirrors — try each in turn, since individual instances
-  // rate-limit shared cloud IPs.
-  const MIRRORS = [
-    'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
-    'https://overpass-api.de/api/interpreter',
-    'https://overpass.kumi.systems/api/interpreter',
-  ]
-  const debug: string[] = []
-  // deno-lint-ignore no-explicit-any
-  let data: { elements?: any[] } | null = null
-  for (const mirror of MIRRORS) {
-    try {
-      const opRes = await fetch(mirror, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: 'data=' + encodeURIComponent(query),
-        signal: AbortSignal.timeout(25_000),
-      })
-      debug.push(`${mirror} -> ${opRes.status}`)
-      if (opRes.ok) {
-        data = await opRes.json()
-        break
-      }
-    } catch (e) {
-      debug.push(`${mirror} -> ${e instanceof Error ? e.message : e}`)
-    }
-  }
+  const data = await queryOverpass(query, debug)
   if (!data) {
-    return { error: 'Map data service is busy — try again in a minute.', debug }
+    return {
+      error: 'No businesses found there right now — try a wider radius or search again shortly.',
+      debug,
+    }
   }
 
   const seen = new Set<string>()

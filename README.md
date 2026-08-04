@@ -29,12 +29,40 @@ ever moves.
 Import the GitHub repo at vercel.com/new — framework preset **Vite**, no env
 vars needed. Every push to the production branch redeploys.
 
-## Discover: Google Places setup
+## Discover
 
-The Discover tab searches Google Places API (New) for local businesses —
-accurate website / phone / rating / hours per business. Without a key it
-falls back to free OpenStreetMap data (less accurate, no ratings). One-time
-setup:
+Finds nearby local businesses and labels each one **No Website**,
+**Social Only**, or **Has Website**, filtering out national chains via the
+`CHAIN_NAMES` blocklist in the edge function. Sorted best-lead-first, with
+a filter toggle for the three presence types.
+
+### How it gets the data (free, no setup)
+
+OpenStreetMap, through **Nominatim** — a bounded-area search with
+`extratags=1`, which carries the website and phone tags the whole feature
+rests on. It answers in 1-2s. Notes for anyone changing it:
+
+- Nominatim's terms must be real OSM *special phrases*. Invented ones
+  ("vape shop", "beauty salon") silently return zero results, so verify any
+  new term against the live API before adding it to `NOMINATIM_TERMS`.
+- Requests are spaced 1.1s apart to respect Nominatim's 1 req/s policy, and
+  every call sends an identifying User-Agent. Keep both.
+- **Overpass** is only a last-resort fallback. It is the natural tool for
+  radius queries, but every public mirror rate-limits shared cloud IPs like
+  Supabase's — measured live, mirrors return 429 or time out after 30s. Only
+  full-planet mirrors belong in `OVERPASS_MIRRORS`: regional instances such
+  as `overpass.osm.ch` answer fast with *zero* results, which looks exactly
+  like "no businesses nearby".
+- Results are cached 72h in the `discover_cache` table.
+
+### Optional upgrade: Google Places API (New)
+
+Adds ratings, review counts, live open/closed, and Google's more complete
+website data. **Not required** — and Google now asks for a card plus a small
+prepayment (~$10 credit) before its free monthly allowance applies, so skip
+this until you want it. Nothing in the app calls Google unless the
+`GOOGLE_PLACES_API_KEY` secret exists; setting it switches sources over with
+no redeploy. When you're ready:
 
 1. Go to [console.cloud.google.com](https://console.cloud.google.com), open
    the project picker → **New Project** → name it `callbax`.
